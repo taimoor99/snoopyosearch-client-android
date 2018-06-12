@@ -1,0 +1,227 @@
+package com.snoopyo.search.saas.helpers;
+
+import android.support.annotation.NonNull;
+
+import com.snoopyo.search.saas.SnoopyoException;
+import com.snoopyo.search.saas.CompletionHandler;
+import com.snoopyo.search.saas.Index;
+import com.snoopyo.search.saas.Query;
+import com.snoopyo.search.saas.Request;
+
+import org.json.JSONArray;
+import org.json.JSONException;
+import org.json.JSONObject;
+
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.HashMap;
+import java.util.Iterator;
+import java.util.List;
+import java.util.Map;
+
+/**
+ * Disjunctive faceting helper.
+ */
+public abstract class DisjunctiveFaceting {
+
+    /**
+     * Run multiple queries. To be implemented by subclasses. The contract is the same as {@see Index#multipleQueriesAsync}.
+     *
+     * @param queries Queries to run.
+     * @param completionHandler Completion handler to be notified of results.
+     * @return A cancellable request.
+     */
+    abstract protected Request multipleQueriesAsync(@NonNull Collection<Query> queries, @NonNull CompletionHandler completionHandler);
+
+    /**
+     * Perform a search with disjunctive facets, generating as many queries as number of disjunctive facets.
+     *
+     * @param query             The query.
+     * @param disjunctiveFacets List of disjunctive facets.
+     * @param refinements       The current refinements, mapping facet names to a list of values.
+     * @param completionHandler The listener that will be notified of the request's outcome.
+     * @return A cancellable request.
+     */
+    public <T extends Collection<String>> Request searchDisjunctiveFacetingAsync(@NonNull Query query, @NonNull final Collection<String> disjunctiveFacets, @NonNull final Map<String, T> refinements, @NonNull final CompletionHandler completionHandler) {
+        final List<Query> queries = computeDisjunctiveFacetingQueries(query, disjunctiveFacets, refinements);
+        return multipleQueriesAsync(queries, new CompletionHandler() {
+            @Override
+            public void requestCompleted(JSONObject content, SnoopyoException error) {
+                JSONObject aggregatedResults = null;
+                try {
+                    if (content != null) {
+                        aggregatedResults = aggregateDisjunctiveFacetingResults(content, disjunctiveFacets, refinements);
+                    }
+                } catch (SnoopyoException e) {
+                    error = e;
+                }
+                completionHandler.requestCompleted(aggregatedResults, error);
+            }
+        });
+    }
+
+    /**
+     * Filter disjunctive refinements from generic refinements and a list of disjunctive facets.
+     *
+     * @param disjunctiveFacets the array of disjunctive facets
+     * @param refinements       Map representing the current refinements
+     * @return The disjunctive refinements
+     */
+    static private @NonNull <T extends Collection<String>> Map<String, T> computeDisjunctiveRefinements(@NonNull Collection<String> disjunctiveFacets, @NonNull Map<String, T> refinements)
+    {
+        Map<String, T> disjunctiveRefinements = new HashMap<>();
+        for (Map.Entry<String, T> elt : refinements.entrySet()) {
+            if (disjunctiveFacets.contains(elt.getKey())) {
+                disjunctiveRefinements.put(elt.getKey(), elt.getValue());
+            }
+        }
+        return disjunctiveRefinements;
+    }
+
+    /**
+     * Compute the queries to run to implement disjunctive faceting.
+     *
+     * @param query             The query.
+     * @param disjunctiveFacets List of disjunctive facets.
+     * @param refinements       The current refinements, mapping facet names to a list of values.
+     * @return A list of queries suitable for {@link Index#multipleQueries}.
+     */
+    static private @NonNull <T extends Collection<String>> List<Query> computeDisjunctiveFacetingQueries(@NonNull Query query, @NonNull Collection<String> disjunctiveFacets, @NonNull Map<String, T> refinements) {
+        // Retain only refinements corresponding to the disjunctive facets.
+        Map<String, ? extends Collection<String>> disjunctiveRefinements = computeDisjunctiveRefinements(disjunctiveFacets, refinements);
+
+        // build queries
+        // TODO: Refactor using JSON array notation: safer and clearer.
+        List<Query> queries = new ArrayList<>();
+        // hits + regular facets query
+        StringBuilder filters = new StringBuilder();
+        boolean first_global = true;
+        for (Map.Entry<String, T> elt : refinements.entrySet()) {
+            StringBuilder or = new StringBuilder();
+            or.append("(");
+            boolean first = true;
+            for (String val : elt.getValue()) {
+                if (disjunctiveRefinements.containsKey(elt.getKey())) {
+                    // disjunctive refinements are ORed
+                    if (!first) {
+                        or.append(',');
+                    }
+                    first = false;
+                    or.append(String.format("%s:%s", elt.getKey(), val));
+                } else {
+                    if (!first_global) {
+                        filters.append(',');
+                    }
+                    first_global = false;
+                    filters.append(String.format("%s:%s", elt.getKey(), val));
+                }
+            }
+            // Add or
+            if (disjunctiveRefinements.containsKey(elt.getKey())) {
+                or.append(')');
+                if (!first_global) {
+                    filters.append(',');
+                }
+                first_global = false;
+                filters.append(or.toString());
+            }
+        }
+
+        queries.add(new Query(query).set("facetFilters", filters.toString()));
+        // one query per disjunctive facet (use all refinements but the current one + hitsPerPage=1 + single facet
+        for (String disjunctiveFacet : disjunctiveFacets) {
+            filters = new StringBuilder();
+            first_global = true;
+            for (Map.Entry<String, T> elt : refinements.entrySet()) {
+                if (disjunctiveFacet.equals(elt.getKey())) {
+                    continue;
+                }
+                StringBuilder or = new StringBuilder();
+                or.append("(");
+                boolean first = true;
+                for (String val : elt.getValue()) {
+                    if (disjunctiveRefinements.containsKey(elt.getKey())) {
+                        // disjunctive refinements are ORed
+                        if (!first) {
+                            or.append(',');
+                        }
+                        first = false;
+                        or.append(String.format("%s:%s", elt.getKey(), val));
+                    } else {
+                        if (!first_global) {
+                            filters.append(',');
+                        }
+                        first_global = false;
+                        filters.append(String.format("%s:%s", elt.getKey(), val));
+                    }
+                }
+                // Add or
+                if (disjunctiveRefinements.containsKey(elt.getKey())) {
+                    or.append(')');
+                    if (!first_global) {
+                        filters.append(',');
+                    }
+                    first_global = false;
+                    filters.append(or.toString());
+                }
+            }
+            String[] facets = new String[]{disjunctiveFacet};
+            queries.add(new Query(query).setHitsPerPage(0).setAnalytics(false)
+                    .setAttributesToRetrieve().setAttributesToHighlight().setAttributesToSnippet()
+                    .setFacets(facets).set("facetFilters", filters.toString()));
+        }
+        return queries;
+    }
+
+    /**
+     * Aggregate results from multiple queries into disjunctive faceting results.
+     *
+     * @param answers The response from the multiple queries.
+     * @param disjunctiveFacets List of disjunctive facets.
+     * @param refinements Facet refinements.
+     * @return The aggregated results.
+     * @throws SnoopyoException
+     */
+    static private <T extends Collection<String>> JSONObject aggregateDisjunctiveFacetingResults(@NonNull JSONObject answers, @NonNull Collection<String> disjunctiveFacets, @NonNull Map<String, T> refinements) throws SnoopyoException
+    {
+        Map<String, T> disjunctiveRefinements = computeDisjunctiveRefinements(disjunctiveFacets, refinements);
+
+        // aggregate answers
+        // first answer stores the hits + regular facets
+        try {
+            boolean nonExhaustiveFacetsCount = false;
+            JSONArray results = answers.getJSONArray("results");
+            JSONObject aggregatedAnswer = results.getJSONObject(0);
+            JSONObject disjunctiveFacetsJSON = new JSONObject();
+            for (int i = 1; i < results.length(); ++i) {
+                if (!results.getJSONObject(i).optBoolean("exhaustiveFacetsCount")) {
+                    nonExhaustiveFacetsCount = true;
+                }
+                JSONObject facets = results.getJSONObject(i).getJSONObject("facets");
+                @SuppressWarnings("unchecked")
+                Iterator<String> keys = facets.keys();
+                while (keys.hasNext()) {
+                    String key = keys.next();
+                    // Add the facet to the disjunctive facet hash
+                    disjunctiveFacetsJSON.put(key, facets.getJSONObject(key));
+                    // concatenate missing refinements
+                    if (!disjunctiveRefinements.containsKey(key)) {
+                        continue;
+                    }
+                    for (String refine : disjunctiveRefinements.get(key)) {
+                        if (!disjunctiveFacetsJSON.getJSONObject(key).has(refine)) {
+                            disjunctiveFacetsJSON.getJSONObject(key).put(refine, 0);
+                        }
+                    }
+                }
+            }
+            aggregatedAnswer.put("disjunctiveFacets", disjunctiveFacetsJSON);
+            if (nonExhaustiveFacetsCount) {
+                aggregatedAnswer.put("exhaustiveFacetsCount", false);
+            }
+            return aggregatedAnswer;
+        } catch (JSONException e) {
+            throw new SnoopyoException("Failed to aggregate results", e);
+        }
+    }
+}
