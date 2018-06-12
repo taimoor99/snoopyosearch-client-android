@@ -32,3 +32,32 @@ dependencies {
     androidTestImplementation 'com.android.support.test:runner:1.0.2'
     androidTestImplementation 'com.android.support.test.espresso:espresso-core:3.0.2'
 }
+
+ext {
+    bintrayRepo = 'maven'
+    bintrayName = 'snoopyosearch-client-android'   // Has to be same as your library module name
+
+    publishedGroupId = 'com.snoopyo.search'
+    libraryName = 'Snoopyosearch Android'
+    artifact = 'snoopyosearch-client-android'     // Has to be same as your library module name
+
+    libraryDescription = 'Android Library to make any text into Toast with Awesome prepended to the text'
+
+    // Your github repo link
+    siteUrl = 'https://github.com/taimoor99/snoopyosearch-client-android'
+    gitUrl = 'https://github.com/taimoor99/snoopyosearch-client-android.git'
+    githubRepository= 'taimoor99/snoopyosearch-client-android'
+
+    libraryVersion = '1.0'
+
+    developerId = 'taimoor99'
+    developerName = 'Taimoor Shaukat'
+    developerEmail = 'taimoorshaukat6@gmail.com'
+
+    licenseName = 'The Apache Software License, Version 2.0'
+    licenseUrl = 'http://www.apache.org/licenses/LICENSE-2.0.txt'
+    allLicenses = ["Apache-2.0"]
+}
+
+apply from: 'https://raw.githubusercontent.com/numetriclabz/jcenter/master/installv.gradle'
+apply from: 'https://raw.githubusercontent.com/numetriclabz/jcenter/master/bintrayv.gradle'
