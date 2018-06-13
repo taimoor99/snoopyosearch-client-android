@@ -21,7 +21,11 @@ android {
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
         }
     }
-
+//    configurations {
+//        // Configuration solely created to make the Android classpath available when compiling Javadocs.
+//        // Taken from: <http://stackoverflow.com/questions/29663918/android-gradle-javadoc-annotation-does-not-exists>.
+//        javadoc
+//    }
 }
 
 dependencies {
@@ -31,15 +35,74 @@ dependencies {
     testImplementation 'junit:junit:4.12'
     androidTestImplementation 'com.android.support.test:runner:1.0.2'
     androidTestImplementation 'com.android.support.test.espresso:espresso-core:3.0.2'
+//    javadoc "com.android.support:support-annotations:27.1.1"
 }
+
+//// Compile docs.
+//task javadoc(type: Javadoc) {
+//    source = android.sourceSets.main.java.srcDirs
+//    destinationDir = new File(projectDir, "build/doc")
+//    title = "Snoopyo Search API Client for Android"
+//    options.memberLevel = JavadocMemberLevel.PUBLIC
+//    options.noQualifiers = ["java.io", "java.lang", "java.util", "org.json"] // avoid fully qualifying usual classes
+//    options.noTimestamp = true // avoid noisy diffs
+//    options.overview = "../doc/include/reference.html"
+//    classpath += project.files(android.getBootClasspath().join(File.pathSeparator))
+//    classpath += configurations.javadoc
+//}
+//tasks.withType(Javadoc) {
+//    options.addStringOption('Xdoclint:none', '-quiet')
+//    options.addStringOption('encoding', 'UTF-8')
+//    options.addStringOption('charSet', 'UTF-8')
+//}
+//
+//ext {
+//    bintrayRepo = 'maven'
+//    bintrayName = 'snoopyosearch'   // Has to be same as your library module name
+//
+//    publishedGroupId = 'com.snoopyo.search'
+//    libraryName = 'Snoopyosearch Android'
+//    artifact = 'snoopyosearch'     // Has to be same as your library module name
+//
+//    libraryDescription = 'Android Library to make any text into Toast with Awesome prepended to the text'
+//
+//    // Your github repo link
+//    siteUrl = 'https://github.com/taimoor99/snoopyosearch-client-android'
+//    gitUrl = 'https://github.com/taimoor99/snoopyosearch-client-android.git'
+//    githubRepository= 'taimoor99/snoopyosearch-client-android'
+//
+//    libraryVersion = '1.0'
+//
+//    developerId = 'taimoor99'
+//    developerName = 'Taimoor Shaukat'
+//    developerEmail = 'taimoorshaukat6@gmail.com'
+//
+//    licenseName = 'The Apache Software License, Version 2.0'
+//    licenseUrl = 'http://www.apache.org/licenses/LICENSE-2.0.txt'
+//    allLicenses = ["Apache-2.0"]
+//}
+//
+//apply from: 'https://raw.githubusercontent.com/nuuneoi/JCenter/master/installv1.gradle'
+//apply from: 'https://raw.githubusercontent.com/nuuneoi/JCenter/master/bintrayv1.gradle'
+def versionMajor = 1
+def versionMinor = 0
+def versionPatch = 0
+def versionBuild = 0
+
+def version_code = versionMajor * 10000 + versionMinor * 1000 + versionPatch * 100 + versionBuild
+def version_name = "${versionMajor}.${versionMinor}.${versionPatch}"
+
+////////////////////////
+// Bintray configuration
+////////////////////////
 
 ext {
     bintrayRepo = 'maven'
-    bintrayName = 'snoopyosearch-client-android'   // Has to be same as your library module name
+    bintrayName = 'snoopyosearch'   // Has to be same as your library module name
 
     publishedGroupId = 'com.snoopyo.search'
     libraryName = 'Snoopyosearch Android'
-    artifact = 'snoopyosearch-client-android'     // Has to be same as your library module name
+    artifact = 'snoopyosearch'     // Has to be same as your library module name
 
     libraryDescription = 'Android Library to make any text into Toast with Awesome prepended to the text'
 
@@ -58,6 +121,121 @@ ext {
     licenseUrl = 'http://www.apache.org/licenses/LICENSE-2.0.txt'
     allLicenses = ["Apache-2.0"]
 }
+//////////////////
+// Maven
+//////////////////
 
-apply from: 'https://raw.githubusercontent.com/numetriclabz/jcenter/master/installv.gradle'
-apply from: 'https://raw.githubusercontent.com/numetriclabz/jcenter/master/bintrayv.gradle'
+apply plugin: 'com.github.dcendents.android-maven'
+
+group = publishedGroupId                               // Maven Group ID for the artifact
+
+install {
+    repositories.mavenInstaller {
+        // This generates POM.xml with proper parameters
+        pom {
+            project {
+                packaging 'aar'
+                groupId publishedGroupId
+                artifactId artifact
+
+                // Add your description here
+                name libraryName
+                description libraryDescription
+                url siteUrl
+
+                // Set your license
+                licenses {
+                    license {
+                        name licenseName
+                        url licenseUrl
+                    }
+                }
+                developers {
+                    developer {
+                        id developerId
+                        name developerName
+                        email developerEmail
+                    }
+                }
+                scm {
+                    connection gitUrl
+                    developerConnection gitUrl
+                    url siteUrl
+
+                }
+            }
+        }
+    }
+}
+
+
+/////////////////
+// Bintray upload
+/////////////////
+
+apply plugin: 'com.jfrog.bintray'
+
+version = libraryVersion
+
+task sourcesJar(type: Jar) {
+    from android.sourceSets.main.java.srcDirs
+    classifier = 'sources'
+}
+
+task javadoc(type: Javadoc) {
+    source = android.sourceSets.main.java.srcDirs
+    classpath += project.files(android.getBootClasspath().join(File.pathSeparator))
+}
+
+task javadocJar(type: Jar, dependsOn: javadoc) {
+    classifier = 'javadoc'
+    from javadoc.destinationDir
+}
+artifacts {
+    archives javadocJar
+    archives sourcesJar
+}
+
+// Bintray
+Properties properties = new Properties()
+properties.load(project.rootProject.file('local.properties').newDataInputStream())
+
+bintray {
+    // First try to read from local.properties
+    user = properties.getProperty("bintray.user")
+    key = properties.getProperty("bintray.apikey")
+    def gpgpassphrase = properties.getProperty("bintray.gpg.password")
+
+    // If the properties aren't set in a properties file, load from environment (needed for CI)
+    if (user == null) {
+        user = System.getenv('BINTRAY_USERNAME')
+    }
+    if (key == null) {
+        key = System.getenv('BINTRAY_APIKEY')
+    }
+    if (gpgpassphrase == null) {
+        gpgpassphrase = System.getenv('BINTRAY_GPG_PASSPHRASE')
+    }
+
+
+
+    configurations = ['archives']
+    pkg {
+        repo = bintrayRepo
+        name = bintrayName
+        desc = libraryDescription
+        websiteUrl = siteUrl
+        vcsUrl = gitUrl
+        licenses = allLicenses
+        publish = true
+        publicDownloadNumbers = true
+        version {
+            desc = libraryDescription
+            gpg {
+                sign = true //Determines whether to GPG sign the files. The default is false
+                passphrase = gpgpassphrase
+                //Optional. The passphrase for GPG signing'
+            }
+        }
+    }
+}
